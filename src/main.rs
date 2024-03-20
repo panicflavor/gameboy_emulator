@@ -20,12 +20,28 @@ const SUBTRACT_FLAG_BYTE_POSITION: u8 = 6;
 const HALF_CARRY_FLAG_BYTE_POSITION: u8 = 5;
 const CARRY_FLAG_BYTE_POSITION: u8 = 4;
 
+const ZERO_FLAG_BYTE_MASK: u8 = 1 << ZERO_FLAG_BYTE_POSITION;
+const SUBTRACT_FLAG_BYTE_MASK: u8 = 1 << SUBTRACT_FLAG_BYTE_POSITION;
+const HALF_CARRY_FLAG_BYTE_MASK: u8 = 1 << HALF_CARRY_FLAG_BYTE_POSITION;
+const CARRY_FLAG_BYTE_MASK: u8 = 1 << CARRY_FLAG_BYTE_POSITION;
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 struct FlagsRegister {
     zero: bool,
     subtract: bool,
     half_carry: bool,
     carry: bool,
+}
+
+impl FlagsRegister {
+    fn empty() -> Self {
+        FlagsRegister {
+            zero: false,
+            subtract: false,
+            half_carry: false,
+            carry: false,
+        }
+    }
 }
 
 impl std::convert::From<FlagsRegister> for u8 {
@@ -60,12 +76,7 @@ impl Registers {
             c: 0,
             d: 0,
             e: 0,
-            f: FlagsRegister {
-                zero: false,
-                subtract: false,
-                half_carry: false,
-                carry: false,
-            },
+            f: FlagsRegister::empty(),
             h: 0,
             l: 0,
         }
@@ -491,18 +502,51 @@ mod test {
     use typed_builder::TypedBuilder;
 
     #[derive(TypedBuilder)]
+    #[builder(mutators(
+        fn before_a(&mut self, value: u8) {
+            self.before_a = Some(value);
+        }
+        fn before_c(&mut self,value: u8) {
+            self.before_c = Some(value);
+        }
+        fn before_f(&mut self, value: u8) {
+            self.before_f = Some(value as u8);
+        }
+        fn before_af(&mut self, value: u16) {
+            self.before_a = Some((value >> 8) as u8);
+            self.before_f = Some(value as u8);
+        }
+        fn after_a(&mut self, value: u8) {
+            self.after_a = Some(value);
+        }
+        fn after_c(&mut self, value: u8) {
+            self.after_c = Some(value);
+        }
+        fn after_f(&mut self, value: u8) {
+            self.after_f = Some(value as u8);
+        }
+        fn after_af(&mut self, value: u16) {
+            self.after_a = Some((value >> 8) as u8);
+            self.after_f = Some(value as u8);
+        }
+    ))]
     struct CPUTest {
         program: Vec<u8>,
         // a
-        #[builder(default, setter(strip_option))]
+        #[builder(default, via_mutators)]
         before_a: Option<u8>,
-        #[builder(default, setter(strip_option))]
+        #[builder(default, via_mutators)]
         after_a: Option<u8>,
         // c
-        #[builder(default, setter(strip_option))]
+        #[builder(default, via_mutators)]
         before_c: Option<u8>,
-        #[builder(default, setter(strip_option))]
+        #[builder(default, via_mutators)]
         after_c: Option<u8>,
+        // f
+        #[builder(default, via_mutators)]
+        before_f: Option<u8>,
+        #[builder(default, via_mutators)]
+        after_f: Option<u8>,
         // zero_flag
         #[builder(default, setter(strip_option))]
         before_zero_flag: Option<bool>,
@@ -554,35 +598,43 @@ mod test {
                 }
             };
 
-            let b_zero_flag = match self.before_zero_flag {
-                None => cpu.registers.f.zero,
-                Some(v) => {
-                    cpu.registers.f.zero = v;
-                    v
-                }
-            };
+            let (b_f, b_f_u8) = match self.before_f {
+                None => {
+                    if let Some(v) = self.before_zero_flag {
+                        cpu.registers.f.zero = v;
+                    }
+                    if let Some(v) = self.before_subtract_flag {
+                        cpu.registers.f.subtract = v;
+                    }
+                    if let Some(v) = self.before_half_carry_flag {
+                        cpu.registers.f.half_carry = v;
+                    }
+                    if let Some(v) = self.before_carry_flag {
+                        cpu.registers.f.carry = v;
+                    }
 
-            let b_subtract_flag = match self.before_subtract_flag {
-                None => cpu.registers.f.subtract,
-                Some(v) => {
-                    cpu.registers.f.subtract = v;
-                    v
+                    let f = cpu.registers.f;
+                    let v = u8::from(f);
+                    (f, v)
                 }
-            };
-
-            let b_half_carry_flag = match self.before_half_carry_flag {
-                None => cpu.registers.f.half_carry,
                 Some(v) => {
-                    cpu.registers.f.half_carry = v;
-                    v
-                }
-            };
+                    let f = FlagsRegister::from(v);
 
-            let b_carry_flag = match self.before_carry_flag {
-                None => cpu.registers.f.carry,
-                Some(v) => {
-                    cpu.registers.f.carry = v;
-                    v
+                    if let Some(a) = self.before_zero_flag {
+                        assert_eq!(f.zero, a, "Before (Register F != Zero Flag)");
+                    }
+                    if let Some(a) = self.before_subtract_flag {
+                        assert_eq!(f.subtract, a, "Before (Register F != Subtract Flag)");
+                    }
+                    if let Some(a) = self.before_half_carry_flag {
+                        assert_eq!(f.half_carry, a, "Before (Register F != Half Carry Flag)");
+                    }
+                    if let Some(a) = self.before_carry_flag {
+                        assert_eq!(f.carry, a, "Before (Register F != Carry Flag)");
+                    }
+
+                    cpu.registers.f = f;
+                    (f, v)
                 }
             };
 
@@ -595,26 +647,69 @@ mod test {
             assert_eq!(cpu.registers.a, self.after_a.unwrap_or(b_a), "Register A");
             assert_eq!(cpu.registers.c, self.after_c.unwrap_or(b_c), "Register C");
 
-            assert_eq!(
-                cpu.registers.f.zero,
-                self.after_zero_flag.unwrap_or(b_zero_flag),
-                "Zero Flag"
-            );
-            assert_eq!(
-                cpu.registers.f.subtract,
-                self.after_subtract_flag.unwrap_or(b_subtract_flag),
-                "Subtract Flag"
-            );
-            assert_eq!(
-                cpu.registers.f.half_carry,
-                self.after_half_carry_flag.unwrap_or(b_half_carry_flag),
-                "Half Carry Flag"
-            );
-            assert_eq!(
-                cpu.registers.f.carry,
-                self.after_carry_flag.unwrap_or(b_carry_flag),
-                "Carry Flag"
-            );
+            match self.after_f {
+                None => {
+                    let mut a_f = b_f;
+                    let mut a_f_u8 = b_f_u8;
+                    if let Some(v) = self.after_zero_flag {
+                        a_f.zero = v;
+                        if v {
+                            a_f_u8 = a_f_u8 | ZERO_FLAG_BYTE_MASK;
+                        } else {
+                            a_f_u8 = a_f_u8 & !ZERO_FLAG_BYTE_MASK;
+                        }
+                    }
+                    if let Some(v) = self.after_subtract_flag {
+                        a_f.subtract = v;
+                        if v {
+                            a_f_u8 = a_f_u8 | SUBTRACT_FLAG_BYTE_MASK;
+                        } else {
+                            a_f_u8 = a_f_u8 & !SUBTRACT_FLAG_BYTE_MASK;
+                        }
+                    }
+                    if let Some(v) = self.after_half_carry_flag {
+                        a_f.half_carry = v;
+                        if v {
+                            a_f_u8 = a_f_u8 | HALF_CARRY_FLAG_BYTE_MASK;
+                        } else {
+                            a_f_u8 = a_f_u8 & !HALF_CARRY_FLAG_BYTE_MASK;
+                        }
+                    }
+                    if let Some(v) = self.after_carry_flag {
+                        a_f.carry = v;
+                        if v {
+                            a_f_u8 = a_f_u8 | CARRY_FLAG_BYTE_MASK;
+                        } else {
+                            a_f_u8 = a_f_u8 & CARRY_FLAG_BYTE_MASK;
+                        }
+                    }
+                    assert_eq!(cpu.registers.f.zero, a_f.zero, "Zero Flag");
+                    assert_eq!(cpu.registers.f.subtract, a_f.subtract, "Subtract Flag");
+                    assert_eq!(
+                        cpu.registers.f.half_carry, a_f.half_carry,
+                        "Half Carry Flag"
+                    );
+                    assert_eq!(cpu.registers.f.carry, a_f.carry, "Carry Flag");
+                    assert_eq!(u8::from(cpu.registers.f), a_f_u8, "Register F");
+                }
+                Some(v) => {
+                    let a_f = FlagsRegister::from(v);
+                    let a_f_u8 = v;
+                    if let Some(a) = self.after_zero_flag {
+                        assert_eq!(a_f.zero, a, "After (Register F != Zero Flag)");
+                    }
+                    if let Some(a) = self.after_subtract_flag {
+                        assert_eq!(a_f.subtract, a, "After (Register F != Subtract Flag)");
+                    }
+                    if let Some(a) = self.after_half_carry_flag {
+                        assert_eq!(a_f.half_carry, a, "After (Register F != Half Carry Flag)");
+                    }
+                    if let Some(a) = self.after_carry_flag {
+                        assert_eq!(a_f.carry, a, "After (Register F != Carry Flag)");
+                    }
+                    assert_eq!(u8::from(cpu.registers.f), a_f_u8, "Register F");
+                }
+            }
 
             if let Some(v) = self.after_pc {
                 assert_eq!(cpu.pc, v, "Program Counter");
@@ -695,6 +790,37 @@ mod test {
             .program(vec![0xCA, 0x01, 0x02])
             .before_zero_flag(false)
             .after_pc(0x0003)
+            .build()
+            .run();
+    }
+
+    #[test]
+    fn test_f() {
+        CPUTest::builder()
+            .program(vec![])
+            .before_f(0xf0)
+            .after_zero_flag(true)
+            .after_subtract_flag(true)
+            .after_half_carry_flag(true)
+            .after_carry_flag(true)
+            .build()
+            .run();
+
+        CPUTest::builder()
+            .program(vec![])
+            .before_zero_flag(true)
+            .before_subtract_flag(true)
+            .before_half_carry_flag(true)
+            .before_carry_flag(true)
+            .after_f(0xf0)
+            .build()
+            .run();
+
+        // 変換で、情報が落ちる...
+        CPUTest::builder()
+            .program(vec![])
+            .before_af(0xffff)
+            .after_af(0xfff0)
             .build()
             .run();
     }
