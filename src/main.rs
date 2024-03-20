@@ -111,6 +111,54 @@ impl instruction::Instruction {
     }
 }
 
+#[derive(Debug)]
+#[allow(non_camel_case_types)]
+enum JumpConditionArg {
+    NZ,
+    Z,
+    NC,
+    C,
+    a16,
+    NONE,
+}
+
+impl std::convert::From<instruction::JP_Arg_0> for JumpConditionArg {
+    fn from(value: instruction::JP_Arg_0) -> Self {
+        match value {
+            instruction::JP_Arg_0::NZ => JumpConditionArg::NZ,
+            instruction::JP_Arg_0::Z => JumpConditionArg::Z,
+            instruction::JP_Arg_0::NC => JumpConditionArg::NC,
+            instruction::JP_Arg_0::C => JumpConditionArg::C,
+            instruction::JP_Arg_0::a16 => JumpConditionArg::a16,
+            _ => todo!(),
+        }
+    }
+}
+
+impl std::convert::From<instruction::CALL_Arg_0> for JumpConditionArg {
+    fn from(value: instruction::CALL_Arg_0) -> Self {
+        match value {
+            instruction::CALL_Arg_0::NZ => JumpConditionArg::NZ,
+            instruction::CALL_Arg_0::Z => JumpConditionArg::Z,
+            instruction::CALL_Arg_0::NC => JumpConditionArg::NC,
+            instruction::CALL_Arg_0::C => JumpConditionArg::C,
+            instruction::CALL_Arg_0::a16 => JumpConditionArg::a16,
+        }
+    }
+}
+
+impl std::convert::From<instruction::RET_Arg_0> for JumpConditionArg {
+    fn from(value: instruction::RET_Arg_0) -> Self {
+        match value {
+            instruction::RET_Arg_0::NZ => JumpConditionArg::NZ,
+            instruction::RET_Arg_0::Z => JumpConditionArg::Z,
+            instruction::RET_Arg_0::NC => JumpConditionArg::NC,
+            instruction::RET_Arg_0::C => JumpConditionArg::C,
+            instruction::RET_Arg_0::NONE => JumpConditionArg::NONE,
+        }
+    }
+}
+
 struct CPU {
     registers: Registers,
     pc: u16,
@@ -178,18 +226,22 @@ impl CPU {
         }
     }
 
+    fn get_jump_condition(&self, arg: JumpConditionArg) -> bool {
+        match arg {
+            JumpConditionArg::NZ => !self.registers.f.zero,
+            JumpConditionArg::Z => self.registers.f.zero,
+            JumpConditionArg::NC => !self.registers.f.carry,
+            JumpConditionArg::C => self.registers.f.carry,
+            JumpConditionArg::a16 => true,
+            JumpConditionArg::NONE => true,
+        }
+    }
+
     fn dec(&mut self, arg0: instruction::DEC_Arg_0) -> u16 {
         0
     }
     fn jp(&mut self, arg0: instruction::JP_Arg_0, arg1: instruction::JP_Arg_1) -> u16 {
-        let jump_condition = match arg0 {
-            instruction::JP_Arg_0::NZ => !self.registers.f.zero,
-            instruction::JP_Arg_0::Z => self.registers.f.zero,
-            instruction::JP_Arg_0::NC => !self.registers.f.carry,
-            instruction::JP_Arg_0::C => self.registers.f.carry,
-            instruction::JP_Arg_0::a16 => true,
-            _ => todo!("impl"),
-        };
+        let jump_condition = self.get_jump_condition(JumpConditionArg::from(arg0));
         if jump_condition {
             self.read_next_word()
         } else {
@@ -212,13 +264,7 @@ impl CPU {
         0
     }
     fn call(&mut self, arg0: instruction::CALL_Arg_0, arg1: instruction::CALL_Arg_1) -> u16 {
-        let jump_condition = match arg0 {
-            instruction::CALL_Arg_0::NZ => !self.registers.f.zero,
-            instruction::CALL_Arg_0::Z => self.registers.f.zero,
-            instruction::CALL_Arg_0::NC => !self.registers.f.carry,
-            instruction::CALL_Arg_0::C => self.registers.f.carry,
-            instruction::CALL_Arg_0::a16 => true,
-        };
+        let jump_condition = self.get_jump_condition(JumpConditionArg::from(arg0));
         let next_pc = self.pc.wrapping_add(3);
         if jump_condition {
             self.push_u16(next_pc);
@@ -237,13 +283,7 @@ impl CPU {
         0
     }
     fn ret(&mut self, arg0: instruction::RET_Arg_0) -> u16 {
-        let jump_condition = match arg0 {
-            instruction::RET_Arg_0::NZ => !self.registers.f.zero,
-            instruction::RET_Arg_0::Z => self.registers.f.zero,
-            instruction::RET_Arg_0::NC => !self.registers.f.carry,
-            instruction::RET_Arg_0::C => self.registers.f.carry,
-            instruction::RET_Arg_0::NONE => true,
-        };
+        let jump_condition = self.get_jump_condition(JumpConditionArg::from(arg0));
         if jump_condition {
             self.pop_u16()
         } else {
