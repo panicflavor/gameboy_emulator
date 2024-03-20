@@ -488,106 +488,214 @@ impl MemoryBus {
 #[cfg(test)]
 mod test {
     use super::*;
+    use typed_builder::TypedBuilder;
+
+    #[derive(TypedBuilder)]
+    struct CPUTest {
+        program: Vec<u8>,
+        // a
+        #[builder(default, setter(strip_option))]
+        before_a: Option<u8>,
+        #[builder(default, setter(strip_option))]
+        after_a: Option<u8>,
+        // c
+        #[builder(default, setter(strip_option))]
+        before_c: Option<u8>,
+        #[builder(default, setter(strip_option))]
+        after_c: Option<u8>,
+        // zero_flag
+        #[builder(default, setter(strip_option))]
+        before_zero_flag: Option<bool>,
+        #[builder(default, setter(strip_option))]
+        after_zero_flag: Option<bool>,
+        // subtract_flag
+        #[builder(default, setter(strip_option))]
+        before_subtract_flag: Option<bool>,
+        #[builder(default, setter(strip_option))]
+        after_subtract_flag: Option<bool>,
+        // half_carry_flag
+        #[builder(default, setter(strip_option))]
+        before_half_carry_flag: Option<bool>,
+        #[builder(default, setter(strip_option))]
+        after_half_carry_flag: Option<bool>,
+        // carry_flag
+        #[builder(default, setter(strip_option))]
+        before_carry_flag: Option<bool>,
+        #[builder(default, setter(strip_option))]
+        after_carry_flag: Option<bool>,
+        // pc
+        #[builder(default, setter(strip_option))]
+        before_pc: Option<u16>,
+        #[builder(default, setter(strip_option))]
+        after_pc: Option<u16>,
+    }
+
+    impl CPUTest {
+        fn run(&self) {
+            let mut cpu = CPU::new();
+
+            for i in 0..self.program.len() {
+                cpu.bus.write_byte(i as u16, self.program[i]);
+            }
+
+            let b_a = match self.before_a {
+                None => cpu.registers.a,
+                Some(v) => {
+                    cpu.registers.a = v;
+                    v
+                }
+            };
+
+            let b_c = match self.before_c {
+                None => cpu.registers.c,
+                Some(v) => {
+                    cpu.registers.c = v;
+                    v
+                }
+            };
+
+            let b_zero_flag = match self.before_zero_flag {
+                None => cpu.registers.f.zero,
+                Some(v) => {
+                    cpu.registers.f.zero = v;
+                    v
+                }
+            };
+
+            let b_subtract_flag = match self.before_subtract_flag {
+                None => cpu.registers.f.subtract,
+                Some(v) => {
+                    cpu.registers.f.subtract = v;
+                    v
+                }
+            };
+
+            let b_half_carry_flag = match self.before_half_carry_flag {
+                None => cpu.registers.f.half_carry,
+                Some(v) => {
+                    cpu.registers.f.half_carry = v;
+                    v
+                }
+            };
+
+            let b_carry_flag = match self.before_carry_flag {
+                None => cpu.registers.f.carry,
+                Some(v) => {
+                    cpu.registers.f.carry = v;
+                    v
+                }
+            };
+
+            if let Some(v) = self.before_pc {
+                cpu.pc = v;
+            }
+
+            cpu.step();
+
+            assert_eq!(cpu.registers.a, self.after_a.unwrap_or(b_a), "Register A");
+            assert_eq!(cpu.registers.c, self.after_c.unwrap_or(b_c), "Register C");
+
+            assert_eq!(
+                cpu.registers.f.zero,
+                self.after_zero_flag.unwrap_or(b_zero_flag),
+                "Zero Flag"
+            );
+            assert_eq!(
+                cpu.registers.f.subtract,
+                self.after_subtract_flag.unwrap_or(b_subtract_flag),
+                "Subtract Flag"
+            );
+            assert_eq!(
+                cpu.registers.f.half_carry,
+                self.after_half_carry_flag.unwrap_or(b_half_carry_flag),
+                "Half Carry Flag"
+            );
+            assert_eq!(
+                cpu.registers.f.carry,
+                self.after_carry_flag.unwrap_or(b_carry_flag),
+                "Carry Flag"
+            );
+
+            if let Some(v) = self.after_pc {
+                assert_eq!(cpu.pc, v, "Program Counter");
+            }
+        }
+    }
 
     #[test]
     fn test_add_a_c() {
-        let mut cpu = CPU::new();
-        cpu.bus.write_byte(0x0000, 0x81); // ADD A, C
-        cpu.registers.c = 0x03;
-        cpu.registers.a = 0x02;
-        cpu.step();
-        assert_eq!(cpu.registers.a, 0x05);
-        assert_eq!(cpu.pc, 0x0001);
-        assert_eq!(
-            cpu.registers.f,
-            FlagsRegister {
-                zero: false,
-                subtract: false,
-                half_carry: false,
-                carry: false,
-            }
-        );
+        // ADD A, C
+        CPUTest::builder()
+            .program(vec![0x81])
+            .before_c(0x03)
+            .before_a(0x02)
+            .after_a(0x05)
+            .after_pc(0x0001)
+            .build()
+            .run();
     }
 
     #[test]
     fn test_add_a_c_zero() {
-        let mut cpu = CPU::new();
-        cpu.bus.write_byte(0x0000, 0x81); // ADD A, C
-        cpu.registers.c = 0x00;
-        cpu.registers.a = 0x00;
-        cpu.step();
-        assert_eq!(cpu.registers.a, 0x00);
-        assert_eq!(cpu.pc, 0x0001);
-        assert_eq!(
-            cpu.registers.f,
-            FlagsRegister {
-                zero: true,
-                subtract: false,
-                half_carry: false,
-                carry: false,
-            }
-        );
+        // ADD A, C
+        CPUTest::builder()
+            .program(vec![0x81])
+            .before_c(0x00)
+            .before_a(0x00)
+            .after_pc(0x0001)
+            .after_a(0x00)
+            .after_zero_flag(true)
+            .build()
+            .run();
     }
 
     #[test]
     fn test_add_a_c_carry() {
-        let mut cpu = CPU::new();
-        cpu.bus.write_byte(0x0000, 0x81); // ADD A, C
-        cpu.registers.c = 0xF0;
-        cpu.registers.a = 0x20;
-        cpu.step();
-        assert_eq!(cpu.registers.a, 0x10);
-        assert_eq!(cpu.pc, 0x0001);
-        assert_eq!(
-            cpu.registers.f,
-            FlagsRegister {
-                zero: false,
-                subtract: false,
-                half_carry: false,
-                carry: true,
-            }
-        );
+        // ADD A, C
+        CPUTest::builder()
+            .program(vec![0x81])
+            .before_c(0xF0)
+            .before_a(0x20)
+            .after_pc(0x0001)
+            .after_a(0x10)
+            .after_carry_flag(true)
+            .build()
+            .run();
     }
 
     #[test]
     fn test_add_a_c_half_carry() {
-        let mut cpu = CPU::new();
-        cpu.bus.write_byte(0x0000, 0x81); // ADD A, C
-        cpu.registers.c = 0x0F;
-        cpu.registers.a = 0x01;
-        cpu.step();
-        assert_eq!(cpu.registers.a, 0x10);
-        assert_eq!(cpu.pc, 0x0001);
-        assert_eq!(
-            cpu.registers.f,
-            FlagsRegister {
-                zero: false,
-                subtract: false,
-                half_carry: true,
-                carry: false,
-            }
-        );
+        // ADD A, C
+        CPUTest::builder()
+            .program(vec![0x81])
+            .before_c(0x0F)
+            .before_a(0x01)
+            .after_pc(0x0001)
+            .after_a(0x10)
+            .after_half_carry_flag(true)
+            .build()
+            .run();
     }
 
     #[test]
     fn test_jp_zero() {
-        let mut cpu = CPU::new();
-        cpu.bus.write_byte(0x0000, 0xCA); // JP Z, a16
-        cpu.bus.write_byte(0x0001, 0x01);
-        cpu.bus.write_byte(0x0002, 0x02);
-        cpu.registers.f.zero = true;
-        cpu.step();
-        assert_eq!(cpu.pc, 0x0201);
+        // JP Z, a16
+        CPUTest::builder()
+            .program(vec![0xCA, 0x01, 0x02])
+            .before_zero_flag(true)
+            .after_pc(0x0201)
+            .build()
+            .run();
     }
 
     #[test]
     fn test_jp_zero_fail() {
-        let mut cpu = CPU::new();
-        cpu.bus.write_byte(0x0000, 0xCA); // JP Z, a16
-        cpu.bus.write_byte(0x0001, 0x01);
-        cpu.bus.write_byte(0x0002, 0x02);
-        cpu.registers.f.zero = false;
-        cpu.step();
-        assert_eq!(cpu.pc, 0x0003);
+        // JP Z, a16
+        CPUTest::builder()
+            .program(vec![0xCA, 0x01, 0x02])
+            .before_zero_flag(false)
+            .after_pc(0x0003)
+            .build()
+            .run();
     }
 }
